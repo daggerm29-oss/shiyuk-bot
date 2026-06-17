@@ -68,13 +68,13 @@ Thread(target=run_server, daemon=True).start()
 # ==========================================
 # 🤖 BOT CONFIGURATION & CLOUD LOGIN
 # ==========================================
-API_ID = 34989469
-API_HASH = '3d8e9f2619d7d993d1f943181eb4e8c3'
+API_ID = 27611951
+API_HASH = '16c265ac1d31f819b7dd53ce3b3602af'
 MY_USERNAME = "SHIYUK"  
 GAME_BOT = "on9wordchainbot"   
 
 # 🔑 HARDCODED SESSION STRING
-SESSION_STRING = "1BVtsOG8Buw8lZYldaorQCkkSxpqRMUDxrn1qqCvHzlQfNsypt72Hy8W30MtCkC911vo60Jse-h8R3TU7w3-2bE9OOWAkPNtsQ6H_N7ueBRT_4yysTfxixPklujH-uD_hCY-VjCnojsAARmHLzsq-Vij_T5q2ZWqx-Le07TRWrjHLHhIBeRyEDIiMje_yLKerclONxzvfxlUFaKGYzD2Two9MOiDYidlAB8wshOqEpYFAACk1nziicGyx4Y9RyuNWk-9CuR_oJt62JwcpiLrPNilZnsWkK2jjdTgPZA_EqN_K1_7SNiM9sIynlPRbSQi30eiQRTJzngUkpvpKy2D9A4p1kpKSmNo="
+SESSION_STRING = "1BVtsOGoBuyEvSa-3QtKnP4GEYzM46NJ3RTXJu1FZ7dz9cGCZJ46kbfXh9tBXy6veETOZOp6yjM79vhrQs5-iU--Xke-4lO0BJ0tSmyU_uP7n0IINb_Bt86apnHq3BBQ_USxNI221Zgo9vG8geXK_IB4pcGIKihJ2NqwVpraZU94N0A0fg_Ofj2GobTV6aQRTpYfnDZTO4E_v4q60xP5l-kFR0nONv0LwXKIElMDZw9EOU3V0KScmKpb7ellTzqENmBcaMApvXKYPPtFX6wfmk81I0IdGyo45XKnPLLB5UFTAJsc2iDIUlhxYR0PLt4jH9J1icGX4xrOqsH1gssilYRbKHdNEE1M="
 
 client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 

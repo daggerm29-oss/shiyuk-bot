@@ -115,7 +115,7 @@ def update_dashboard(chat_id, state):
     print(report, flush=True)
 
 # ==========================================
-# ⚙️ ADVANCED DIAGNOSTIC SOLVER (V25 OFFENSIVE PIPELINE)
+# ⚙️ ADVANCED DIAGNOSTIC SOLVER (V26 EXCLUSION PIPELINE)
 # ==========================================
 async def submit_word(chat_id, constraints, state, is_retry=False):
     if not is_retry:
@@ -124,20 +124,27 @@ async def submit_word(chat_id, constraints, state, is_retry=False):
     try:
         state["diagnostic_reason"] = "Processing rules and scanning local dictionaries."
         
+        # 1. Regex Constraint Parsers
         start_match = re.search(r'start with ([a-z])', constraints, re.IGNORECASE)
         length_matches = re.findall(r'at least (\d+) letters', constraints, re.IGNORECASE)
-        include_match = re.search(r'(?:include|contain) ([a-z])', constraints, re.IGNORECASE)
+        include_match = re.search(r'(?:include|contain)\b(?!\s+at least)\s+([a-z])', constraints, re.IGNORECASE)
+        exclude_match = re.search(r'exclude\s+([a-z,\s]+)(?:\s+and|\.)', constraints, re.IGNORECASE)
 
+        # 2. Variable Extraction
         s_char = start_match.group(1).lower() if start_match else ""
         min_len = int(length_matches[-1]) if length_matches else 1
         i_char = include_match.group(1).lower() if include_match else ""
         
-        # Filter pool strictly by game rules first
+        # Parse excluded letters into a set (e.g., "A, K" becomes {'a', 'k'})
+        e_chars = set(re.findall(r'[a-z]', exclude_match.group(1).lower())) if exclude_match else set()
+        
+        # 3. Strict Rule Filtering
         valid_options = []
         for w in VALID_WORDS:
             if s_char and not w.startswith(s_char): continue
             if len(w) < min_len: continue
             if i_char and i_char not in w: continue
+            if e_chars and any(c in w for c in e_chars): continue
             if w in state["used_words"]: continue
             valid_options.append(w)
             
@@ -156,19 +163,15 @@ async def submit_word(chat_id, constraints, state, is_retry=False):
             
             # Execution Routing
             if tier_1:
-                # Short, lethal word available within length window. Random choice keeps it unpredictable.
                 word = random.choice(tier_1)
                 status_log = f"🔥 ATTACK TIER 1: Found short trap word '{word}' ending in '{word[-1]}'."
             elif tier_2:
-                # Trap word exists but requires going past window. Take the absolute shortest one to save ammo.
                 word = tier_2[0]
                 status_log = f"💥 ATTACK TIER 2: Scaling length to {len(word)} for trap ending '{word[-1]}' with '{word}'."
             elif tier_3:
-                # No offensive options available. Rollback to tight standard defense window.
                 word = random.choice(tier_3)
                 status_log = f"🛡️ ROLLBACK TIER 3: No trap vectors. Playing safe short word '{word}'."
             else:
-                # Absolute fallback: take shortest valid word remaining
                 word = valid_options[0]
                 status_log = f"⚠️ FALLBACK TIER 4: Forced survival play with shortest option '{word}'."
 
@@ -198,11 +201,11 @@ async def submit_word(chat_id, constraints, state, is_retry=False):
             letter_key = word[0].upper()
             if letter_key not in state["word_ledger"]:
                 state["word_ledger"][letter_key] = []
-            state["word_ledger"][letter_key].append(f"{word} (→{word[-1].upper()})")
+            state["word_ledger"][letter_key].append(f"{word} (≥{min_len})")
             
             state["diagnostic_reason"] = f"GAME BOT DELAY: Sent '{word}' successfully. Waiting for validation."
         else:
-            state["diagnostic_reason"] = f"DICT EXHAUSTION: No valid words remain matching: Start='{s_char}', Min={min_len}."
+            state["diagnostic_reason"] = f"DICT EXHAUSTION: No valid words remain. Constraints: Start='{s_char}', Min={min_len}, Exclude={e_chars}."
             
     except Exception as e:
         state["diagnostic_reason"] = f"INTERNAL ENGINE CRASH: {e}"
@@ -235,10 +238,11 @@ async def master_game_handler(event):
                 state["diagnostic_reason"] = "IDLE: Waiting for opponent turn."
             state["my_turn"] = False
 
+    # Added "banned letters" to the explicit rejection list
     error_phrases = [
         "has been used", "not a valid word", "invalid", 
         "not in my list of words", "has less than",      
-        "does not include", "does not contain"
+        "does not include", "does not contain", "banned letters", "contains banned"
     ]
     
     if any(phrase in bot_text for phrase in error_phrases):
@@ -267,6 +271,6 @@ async def master_game_handler(event):
         state["word_ledger"].clear()
         state["my_turn"] = False
 
-print(f"V25 Offensive Engine ({MY_USERNAME}) is running!", flush=True)
+print(f"V26 Exclusion Engine ({MY_USERNAME}) is running!", flush=True)
 client.start()
 client.run_until_disconnected()

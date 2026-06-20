@@ -115,7 +115,7 @@ def update_dashboard(chat_id, state):
     print(report, flush=True)
 
 # ==========================================
-# ⚙️ ADVANCED DIAGNOSTIC SOLVER (V26 EXCLUSION PIPELINE)
+# ⚙️ ADVANCED DIAGNOSTIC SOLVER (V27 BULLETPROOF PARSER)
 # ==========================================
 async def submit_word(chat_id, constraints, state, is_retry=False):
     if not is_retry:
@@ -124,27 +124,29 @@ async def submit_word(chat_id, constraints, state, is_retry=False):
     try:
         state["diagnostic_reason"] = "Processing rules and scanning local dictionaries."
         
-        # 1. Regex Constraint Parsers
+        # 1. Regex Constraint Parsers (Bulletproofed with Negative Lookaheads)
         start_match = re.search(r'start with ([a-z])', constraints, re.IGNORECASE)
         length_matches = re.findall(r'at least (\d+) letters', constraints, re.IGNORECASE)
-        include_match = re.search(r'(?:include|contain)\b(?!\s+at least)\s+([a-z])', constraints, re.IGNORECASE)
-        exclude_match = re.search(r'exclude\s+([a-z,\s]+)(?:\s+and|\.)', constraints, re.IGNORECASE)
+        
+        # Ignore "include at least" so it doesn't accidentally parse length as a letter
+        include_match = re.search(r'(?:include|contain)\s+(?!at\s+least)([a-z,\s]+?)(?:\s+and|\.|$)', constraints, re.IGNORECASE)
+        exclude_match = re.search(r'exclude\s+([a-z,\s]+?)(?:\s+and|\.|$)', constraints, re.IGNORECASE)
 
         # 2. Variable Extraction
         s_char = start_match.group(1).lower() if start_match else ""
         min_len = int(length_matches[-1]) if length_matches else 1
-        i_char = include_match.group(1).lower() if include_match else ""
         
-        # Parse excluded letters into a set (e.g., "A, K" becomes {'a', 'k'})
-        e_chars = set(re.findall(r'[a-z]', exclude_match.group(1).lower())) if exclude_match else set()
+        # Convert found letters into strict mathematical sets
+        i_chars = set(re.findall(r'\b([a-z])\b', include_match.group(1).lower())) if include_match else set()
+        e_chars = set(re.findall(r'\b([a-z])\b', exclude_match.group(1).lower())) if exclude_match else set()
         
         # 3. Strict Rule Filtering
         valid_options = []
         for w in VALID_WORDS:
             if s_char and not w.startswith(s_char): continue
-            if len(w) < min_len: continue
-            if i_char and i_char not in w: continue
-            if e_chars and any(c in w for c in e_chars): continue
+            if len(w) < min_len: continue # 🛡️ ABSOLUTE LENGTH GUARD
+            if i_chars and not all(c in w for c in i_chars): continue # MUST INCLUDE ALL REQUIRED
+            if e_chars and any(c in w for c in e_chars): continue # MUST EXCLUDE ALL BANNED
             if w in state["used_words"]: continue
             valid_options.append(w)
             
@@ -164,16 +166,16 @@ async def submit_word(chat_id, constraints, state, is_retry=False):
             # Execution Routing
             if tier_1:
                 word = random.choice(tier_1)
-                status_log = f"🔥 ATTACK TIER 1: Found short trap word '{word}' ending in '{word[-1]}'."
+                status_log = f"🔥 ATTACK TIER 1: Found short trap '{word}' (Length: {len(word)} >= {min_len})."
             elif tier_2:
                 word = tier_2[0]
-                status_log = f"💥 ATTACK TIER 2: Scaling length to {len(word)} for trap ending '{word[-1]}' with '{word}'."
+                status_log = f"💥 ATTACK TIER 2: Using trap ending '{word[-1]}' with '{word}' (Length: {len(word)} >= {min_len})."
             elif tier_3:
                 word = random.choice(tier_3)
-                status_log = f"🛡️ ROLLBACK TIER 3: No trap vectors. Playing safe short word '{word}'."
+                status_log = f"🛡️ ROLLBACK TIER 3: Playing safe short word '{word}' (Length: {len(word)} >= {min_len})."
             else:
                 word = valid_options[0]
-                status_log = f"⚠️ FALLBACK TIER 4: Forced survival play with shortest option '{word}'."
+                status_log = f"⚠️ FALLBACK TIER 4: Forced survival play '{word}' (Length: {len(word)} >= {min_len})."
 
             delay = 1.0 if is_retry else random.uniform(3.0, 4.5)
             elapsed = time.time() - state["turn_start_time"]
@@ -205,7 +207,7 @@ async def submit_word(chat_id, constraints, state, is_retry=False):
             
             state["diagnostic_reason"] = f"GAME BOT DELAY: Sent '{word}' successfully. Waiting for validation."
         else:
-            state["diagnostic_reason"] = f"DICT EXHAUSTION: No valid words remain. Constraints: Start='{s_char}', Min={min_len}, Exclude={e_chars}."
+            state["diagnostic_reason"] = f"DICT EXHAUSTION: No valid words remain. Constraints: Start='{s_char}', Min={min_len}, Inc={i_chars}, Exc={e_chars}."
             
     except Exception as e:
         state["diagnostic_reason"] = f"INTERNAL ENGINE CRASH: {e}"
@@ -238,17 +240,18 @@ async def master_game_handler(event):
                 state["diagnostic_reason"] = "IDLE: Waiting for opponent turn."
             state["my_turn"] = False
 
-    # Added "banned letters" to the explicit rejection list
+    # Expanded rejection catch-net
     error_phrases = [
         "has been used", "not a valid word", "invalid", 
         "not in my list of words", "has less than",      
-        "does not include", "does not contain", "banned letters", "contains banned"
+        "does not include", "does not contain", "banned letters", "contains banned", "does not start with"
     ]
     
     if any(phrase in bot_text for phrase in error_phrases):
         last_word = state.get("last_submitted_word", "").lower()
         
         if state["my_turn"] and last_word and last_word in bot_text:
+            # Check if bot specifically yelled at us for length during a rejection loop
             new_len_match = re.search(r'less than (\d+)', bot_text)
             if new_len_match:
                 new_len = new_len_match.group(1)
@@ -271,6 +274,6 @@ async def master_game_handler(event):
         state["word_ledger"].clear()
         state["my_turn"] = False
 
-print(f"V26 Exclusion Engine ({MY_USERNAME}) is running!", flush=True)
+print(f"V27 Bulletproof Logic ({MY_USERNAME}) is running!", flush=True)
 client.start()
 client.run_until_disconnected()

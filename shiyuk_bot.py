@@ -1,23 +1,3 @@
-Here is the **V29 Multi-Agent Script (No AI)**.
-
-I have completely stripped out the Gemini Generative AI, the API key requirement, and the self-healing protocol. The script is now lightweight and strictly relies on mathematical deduction, your local dictionary, and your `verified_database.json` file.
-
-### Step 1: Clean your `requirements.txt`
-
-Since we removed the AI, you no longer need the Google SDK. Open your `requirements.txt` file and **delete** this line if you added it previously:
-
-```text
-google-generativeai
-
-```
-
-### Step 2: The Clean V29 Script
-
-Copy and paste this updated version. Just remember to put your Telegram Session String back in!
-
-### `shiyuk_bot.py` (V29 - Offline Multi-Agent Engine)
-
-```python
 import asyncio
 import os
 import re
@@ -397,5 +377,3 @@ async def chain_game_handler(event):
 print(f"V29 Multi-Agent Engine ({MY_USERNAME}) is running!", flush=True)
 client.start()
 client.run_until_disconnected()
-
-```

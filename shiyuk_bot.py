@@ -215,7 +215,7 @@ async def wordseek_handler(event):
             
             state["pool"].remove(next_guess) 
             
-            human_delay = random.choice([4.0, 5.0, 6.0])
+            human_delay = random.choice([6.0, 8.0, 10.0, 12.0])
             asyncio.create_task(execute_wordseek_guess(chat_id, next_guess, human_delay))
         else:
             print("❌ WordSeek Dictionary Exhausted!")

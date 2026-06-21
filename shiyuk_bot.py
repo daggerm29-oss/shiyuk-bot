@@ -85,7 +85,7 @@ SESSION_STRING = "1BVtsOJkBu05CnVluaWqOIb1oXuO9Xn8RqbUpM_UNazurrlpYOwsfNs7t8dbvb
 client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
 # ==========================================
-# 🟩 AGENT 1: WORDSEEK (ASYNC TYPING FIX)
+# 🟩 AGENT 1: WORDSEEK (V35 PERFECT MEMORY FIX)
 # ==========================================
 wordseek_state = {}
 
@@ -95,7 +95,7 @@ def get_wordseek_state(chat_id):
             "active": False,
             "length": 5,
             "pool": [],
-            "guessed": set()
+            "processed_feedback": set() 
         }
     return wordseek_state[chat_id]
 
@@ -138,7 +138,6 @@ def filter_wordseek_pool(pool, guess, feedback):
             
     return new_pool
 
-# 🔥 NEW: Background task function to prevent freezing the event loop!
 async def execute_wordseek_guess(chat_id, guess, delay):
     try:
         async with client.action(chat_id, 'typing'):
@@ -159,13 +158,13 @@ async def wordseek_handler(event):
         state["active"] = True
         state["length"] = length
         state["pool"] = [w for w in VALID_WORDS if len(w) == length]
-        state["guessed"] = set()
+        state["processed_feedback"] = set()
         print(f"🧩 WordSeek Started! Target Length: {length}. Possible Words: {len(state['pool'])}")
         
         first_guess = random.choice(state["pool"])
-        human_delay = random.choice([4.0, 5.0, 6.0])
+        state["pool"].remove(first_guess)
         
-        # Fire background task instead of sleeping in the main thread
+        human_delay = random.choice([4.0, 5.0, 6.0])
         asyncio.create_task(execute_wordseek_guess(chat_id, first_guess, human_delay))
         return
 
@@ -180,7 +179,7 @@ async def wordseek_handler(event):
                         state["active"] = True
                         state["length"] = length
                         state["pool"] = [w for w in VALID_WORDS if len(w) == length]
-                        state["guessed"] = set()
+                        state["processed_feedback"] = set()
                         break
         
         if not state["active"]: return
@@ -204,19 +203,19 @@ async def wordseek_handler(event):
             guess_word = words[-1].lower()
             
             if len(feedback) != state["length"] or len(guess_word) != state["length"]: continue
-            if guess_word in state["guessed"]: continue 
             
-            state["guessed"].add(guess_word)
+            if guess_word in state["processed_feedback"]: continue 
+            
+            state["processed_feedback"].add(guess_word)
             state["pool"] = filter_wordseek_pool(state["pool"], guess_word, feedback)
 
         if state["pool"]:
             next_guess = random.choice(state["pool"])
             print(f"🎯 WordSeek Thinking... Pool reduced to {len(state['pool'])}. Guessing: {next_guess}")
             
-            human_delay = random.choice([4.0, 5.0, 6.0])
-            state["guessed"].add(next_guess) # Reserve the word instantly so we don't duplicate
+            state["pool"].remove(next_guess) 
             
-            # Fire background task
+            human_delay = random.choice([4.0, 5.0, 6.0])
             asyncio.create_task(execute_wordseek_guess(chat_id, next_guess, human_delay))
         else:
             print("❌ WordSeek Dictionary Exhausted!")
@@ -373,6 +372,6 @@ async def chain_game_handler(event):
         state["word_ledger"].clear()
         state["my_turn"] = False
 
-print(f"V34 Multi-Agent Engine ({MY_USERNAME}) is running!", flush=True)
+print(f"V35 Multi-Agent Engine ({MY_USERNAME}) is running!", flush=True)
 client.start()
 client.run_until_disconnected()

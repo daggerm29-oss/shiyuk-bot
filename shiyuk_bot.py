@@ -10,6 +10,7 @@ from telethon.sessions import StringSession
 from telethon.errors import FloodWaitError
 from flask import Flask
 from threading import Thread
+import google.generativeai as genai
 
 # ==========================================
 # 📚 DICTIONARY & JSON INJECTION
@@ -25,32 +26,34 @@ except Exception as e:
     print(f"⚠️ Failed to download dictionary: {e}", flush=True)
     VALID_WORDS = set()
 
-# 🧠 INJECT CUSTOM VERIFIED JSON
 JSON_DB_FILE = "verified_database.json"
 if os.path.exists(JSON_DB_FILE):
     try:
         with open(JSON_DB_FILE, "r") as f:
             custom_data = json.load(f)
             added_count = 0
-            for word, is_valid in custom_data.items():
-                if is_valid and word not in VALID_WORDS:
+            if isinstance(custom_data, dict):
+                words_to_add = [w for w, valid in custom_data.items() if valid]
+            else:
+                words_to_add = custom_data
+                
+            for word in words_to_add:
+                if word not in VALID_WORDS:
                     VALID_WORDS.add(word)
                     added_count += 1
         print(f"🧬 Injected {added_count} custom verified words from {JSON_DB_FILE}.", flush=True)
     except Exception as e:
         print(f"⚠️ Failed to load custom JSON: {e}", flush=True)
-else:
-    print("ℹ️ No verified_database.json found. Running on base dictionary only.", flush=True)
 
 # ==========================================
-# 🌐 KEEP-ALIVE SERVER & WEB DASHBOARD
+# 🌐 KEEP-ALIVE SERVER
 # ==========================================
 app = Flask(__name__)
 latest_diagnostic_report = "Bot is running. No games have been lost yet! 🚀"
 
 @app.route('/')
 def home():
-    return "SHIYUK WordChain Algorithmic Bot is running! Go to /logs to view diagnostics."
+    return "SHIYUK Multi-Agent Bot is running! Go to /logs to view diagnostics."
 
 @app.route('/logs')
 def logs():
@@ -61,23 +64,178 @@ def run_server():
         port = int(os.environ.get('PORT', 8080)) 
         app.run(host='0.0.0.0', port=port)
     except Exception as e:
-        print(f"ℹ️ Local Port Note: Web server paused locally ({e}).", flush=True)
+        print(f"ℹ️ Local Port Note: Web server paused locally.", flush=True)
 
 Thread(target=run_server, daemon=True).start()
 
 # ==========================================
-# 🤖 BOT CONFIGURATION & CLOUD LOGIN
+# 🤖 BOT CONFIGURATION & API KEYS
 # ==========================================
 API_ID = 27611951
 API_HASH = '16c265ac1d31f819b7dd53ce3b3602af'
 MY_USERNAME = "SHIYUK"  
-GAME_BOT = "on9wordchainbot"   
 
-# 🔑 HARDCODED SESSION STRING
+# Target Game Bots
+CHAIN_GAME_BOT = "on9wordchainbot"   
+SEEK_GAME_BOT = "WordSeekBot"
+
+# 🔑 HARDCODED TELEGRAM SESSION
 SESSION_STRING = "1BVtsOJkBu05CnVluaWqOIb1oXuO9Xn8RqbUpM_UNazurrlpYOwsfNs7t8dbvb2y2z5QIuKiSxu6e7vJ5wqCrQiRhX7xKxQzB78v-BJdPYt4d4OlHP9blBE_GrRlVY3JrQ9kcMLyRF2HMY7Vw5CjG0prqAMYBrNXCm2JtTfdOZGqW31RWV7R_baXFSZThr9NvcH9wOFbiRFV12zxsnK15SU13FOvI83t9ohIbB1LJwzKLF4qyR5Twi4gWRwzLTNG19IqI5rO-5yhcSRQ-4OrFZf0092CzaGOwH9QuoUpWewUrSwXgDCzg70BDNsy-deqwFbflm5gPzhhW7_enpx8D4x_OKZtCqNM="
+
+# 🧠 GEMINI API KEY
+GEMINI_API_KEY = "YOUR_GEMINI_API_KEY_HERE"
+genai.configure(api_key=GEMINI_API_KEY)
+ai_model = genai.GenerativeModel('gemini-1.5-flash') 
 
 client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
+# ==========================================
+# 🟩 AGENT 1: WORDSEEK (WORDLE) ENGINE
+# ==========================================
+wordseek_state = {}
+
+def get_wordseek_state(chat_id):
+    if chat_id not in wordseek_state:
+        wordseek_state[chat_id] = {
+            "active": False,
+            "length": 5,
+            "pool": [],
+            "guessed": set()
+        }
+    return wordseek_state[chat_id]
+
+def filter_wordseek_pool(pool, guess, feedback):
+    new_pool = []
+    for word in pool:
+        valid = True
+        word_chars = list(word)
+        
+        # Pass 1: Greens (Exact Match)
+        for i, (g_char, f) in enumerate(zip(guess, feedback)):
+            if f == 'G':
+                if word[i] != g_char:
+                    valid = False
+                    break
+                word_chars[i] = None 
+        
+        if not valid: continue
+        
+        # Pass 2: Yellows (Wrong Position)
+        for i, (g_char, f) in enumerate(zip(guess, feedback)):
+            if f == 'Y':
+                if word[i] == g_char: 
+                    valid = False
+                    break
+                if g_char in word_chars:
+                    word_chars[word_chars.index(g_char)] = None 
+                else:
+                    valid = False 
+                    break
+                    
+        if not valid: continue
+        
+        # Pass 3: Reds (Not in word)
+        for i, (g_char, f) in enumerate(zip(guess, feedback)):
+            if f == 'R':
+                if g_char in word_chars: 
+                    valid = False
+                    break
+                    
+        if valid:
+            new_pool.append(word)
+            
+    return new_pool
+
+@client.on(events.NewMessage(from_users=SEEK_GAME_BOT))
+async def wordseek_handler(event):
+    chat_id = event.chat_id
+    text = event.raw_text
+    state = get_wordseek_state(chat_id)
+    
+    # 1. Detect Game Initialization
+    start_match = re.search(r'Guess the (\d+)-letter word', text, re.IGNORECASE)
+    if start_match:
+        length = int(start_match.group(1))
+        state["active"] = True
+        state["length"] = length
+        state["pool"] = [w for w in VALID_WORDS if len(w) == length]
+        state["guessed"] = set()
+        print(f"🧩 WordSeek Started! Target Length: {length}. Possible Words: {len(state['pool'])}")
+        
+        # First guess delay to mimic human reading
+        await asyncio.sleep(random.uniform(2.5, 4.0))
+        first_guess = random.choice(state["pool"])
+        await client.send_message(chat_id, first_guess)
+        return
+
+    # 2. Process Emoji Grid Updates
+    if "mode •" in text and any(e in text for e in ['🟥', '🟨', '🟩']):
+        if not state["active"]:
+            # Auto-recover state if bot rebooted mid-game
+            lines = text.split('\n')
+            for line in lines:
+                if '🟥' in line or '🟨' in line or '🟩' in line:
+                    parts = line.strip().split()
+                    if len(parts) >= 2:
+                        length = len(parts[0])
+                        state["active"] = True
+                        state["length"] = length
+                        state["pool"] = [w for w in VALID_WORDS if len(w) == length]
+                        state["guessed"] = set()
+                        break
+        
+        if not state["active"]: return
+
+        # Check for victory condition
+        if '🟩'*state["length"] in text:
+            print("🏆 WordSeek Solved!")
+            state["active"] = False
+            return
+
+        # Parse the grid and eliminate impossible words
+        lines = [line.strip() for line in text.split('\n') if any(e in line for e in ['🟥', '🟨', '🟩'])]
+        
+        for line in lines:
+            parts = line.split()
+            if len(parts) < 2: continue
+            emojis, guess_word = parts[0], parts[1].lower()
+            
+            if len(emojis) != state["length"] or len(guess_word) != state["length"]: continue
+            if guess_word in state["guessed"]: continue 
+            
+            state["guessed"].add(guess_word)
+            
+            feedback = []
+            for e in emojis:
+                if e == '🟩': feedback.append('G')
+                elif e == '🟨': feedback.append('Y')
+                elif e == '🟥': feedback.append('R')
+                
+            if len(feedback) == state["length"]:
+                state["pool"] = filter_wordseek_pool(state["pool"], guess_word, feedback)
+
+        # Execute Next Mathematical Guess
+        if state["pool"]:
+            next_guess = random.choice(state["pool"])
+            print(f"🎯 WordSeek Thinking... Pool reduced to {len(state['pool'])}. Guessing: {next_guess}")
+            
+            await asyncio.sleep(random.uniform(3.5, 5.0)) 
+            try:
+                await client.send_message(chat_id, next_guess)
+            except FloodWaitError:
+                pass
+        else:
+            print("❌ WordSeek Dictionary Exhausted!")
+            state["active"] = False
+            
+    # Detect Standard Game Over
+    if "Game over" in text or "won the game" in text.lower():
+        state["active"] = False
+
+
+# ==========================================
+# ⛓️ AGENT 2: WORDCHAIN ENGINE (V28 Logic)
+# ==========================================
 active_games = {}
 
 def get_game_state(chat_id):
@@ -95,98 +253,94 @@ def get_game_state(chat_id):
 
 def update_dashboard(chat_id, state):
     global latest_diagnostic_report
-    
-    report = f"==================================================\n"
-    report += f"💀 ELIMINATION DIAGNOSTIC REPORT\n"
-    report += f"==================================================\n\n"
-    report += f"❌ CAUSE OF DEATH:\n> {state['diagnostic_reason']}\n\n"
-    
-    report += f"📊 WORD LEDGER (History for this match):\n"
-    if not state["word_ledger"]:
-        report += "> No words were successfully played.\n"
+    report = f"==================================================\n💀 ELIMINATION DIAGNOSTIC REPORT\n==================================================\n\n❌ CAUSE OF DEATH:\n> {state['diagnostic_reason']}\n\n📊 WORD LEDGER (History for this match):\n"
+    if not state["word_ledger"]: report += "> No words were successfully played.\n"
     else:
         for letter in sorted(state["word_ledger"].keys()):
-            words_played = ", ".join(state["word_ledger"][letter])
-            report += f"- [{letter.upper()}]: {words_played}\n"
-            
+            report += f"- [{letter.upper()}]: {', '.join(state['word_ledger'][letter])}\n"
     report += f"\n==================================================\n"
-    
     latest_diagnostic_report = report
     print(report, flush=True)
 
-# ==========================================
-# ⚙️ ADVANCED DIAGNOSTIC SOLVER (V27 BULLETPROOF PARSER)
-# ==========================================
 async def submit_word(chat_id, constraints, state, is_retry=False):
-    if not is_retry:
-        state["turn_start_time"] = time.time()
+    if not is_retry: state["turn_start_time"] = time.time()
         
     try:
         state["diagnostic_reason"] = "Processing rules and scanning local dictionaries."
         
-        # 1. Regex Constraint Parsers (Bulletproofed with Negative Lookaheads)
         start_match = re.search(r'start with ([a-z])', constraints, re.IGNORECASE)
         length_matches = re.findall(r'at least (\d+) letters', constraints, re.IGNORECASE)
-        
-        # Ignore "include at least" so it doesn't accidentally parse length as a letter
         include_match = re.search(r'(?:include|contain)\s+(?!at\s+least)([a-z,\s]+?)(?:\s+and|\.|$)', constraints, re.IGNORECASE)
         exclude_match = re.search(r'exclude\s+([a-z,\s]+?)(?:\s+and|\.|$)', constraints, re.IGNORECASE)
 
-        # 2. Variable Extraction
         s_char = start_match.group(1).lower() if start_match else ""
         min_len = int(length_matches[-1]) if length_matches else 1
-        
-        # Convert found letters into strict mathematical sets
         i_chars = set(re.findall(r'\b([a-z])\b', include_match.group(1).lower())) if include_match else set()
         e_chars = set(re.findall(r'\b([a-z])\b', exclude_match.group(1).lower())) if exclude_match else set()
         
-        # 3. Strict Rule Filtering
         valid_options = []
         for w in VALID_WORDS:
             if s_char and not w.startswith(s_char): continue
-            if len(w) < min_len: continue # 🛡️ ABSOLUTE LENGTH GUARD
-            if i_chars and not all(c in w for c in i_chars): continue # MUST INCLUDE ALL REQUIRED
-            if e_chars and any(c in w for c in e_chars): continue # MUST EXCLUDE ALL BANNED
+            if len(w) < min_len: continue
+            if i_chars and not all(c in w for c in i_chars): continue
+            if e_chars and any(c in w for c in e_chars): continue
             if w in state["used_words"]: continue
             valid_options.append(w)
             
+        # 🚨 GEMINI SELF-HEALING PROTOCOL
+        if not valid_options:
+            print("🚨 LOCAL DICT EXHAUSTED! Triggering Gemini API Self-Healing Protocol...", flush=True)
+            state["diagnostic_reason"] = "DICT EXHAUSTION. Awaiting Gemini AI rescue."
+            try:
+                prompt = f"Generate a JSON array of 5 valid, highly obscure English words (scientific, medical, chemical, or geographical). Criteria:\n"
+                prompt += f"1. Must start with the letter '{s_char.upper()}'.\n"
+                prompt += f"2. Must be exactly {min_len} letters or longer.\n"
+                if i_chars: prompt += f"3. Must contain the letters: {', '.join(i_chars).upper()}.\n"
+                if e_chars: prompt += f"4. MUST NOT contain the letters: {', '.join(e_chars).upper()}.\n"
+                if state["used_words"]: prompt += f"5. MUST NOT be any of these words: {list(state['used_words'])[:10]}.\n"
+                prompt += "Output ONLY a valid JSON array of lowercase strings. No markdown, no explanations."
+
+                response = await asyncio.to_thread(ai_model.generate_content, prompt)
+                clean_json = re.search(r'\[(.*?)\]', response.text.replace('\n', ''), re.IGNORECASE)
+                if clean_json:
+                    new_words = json.loads(f"[{clean_json.group(1)}]")
+                    for w in new_words:
+                        w_clean = w.strip().lower()
+                        if w_clean.isalpha():
+                            VALID_WORDS.add(w_clean)
+                            valid_options.append(w_clean)
+                            
+                    with open(JSON_DB_FILE, "a") as f:
+                        for w in valid_options:
+                            f.write(f'\n"{w}": true,')
+                            
+                    print(f"✅ AI RESCUE SUCCESS: Found {len(valid_options)} new words: {valid_options}", flush=True)
+            except Exception as ai_e:
+                print(f"❌ AI RESCUE FAILED: {ai_e}", flush=True)
+                
         if valid_options:
-            # 🎯 OFFENSIVE TARGET ENDINGS (Ordered by trapping difficulty)
             KILLER_ENDINGS = ['x', 'j', 'q', 'z', 'k', 'v', 'y']
-            
-            # Sort array ascending by length to guarantee ammo conservation baseline
             valid_options.sort(key=len)
             preferred_len_limit = min_len + 2
             
-            # Categorize options into specific strategic tiers
             tier_1 = [w for w in valid_options if len(w) <= preferred_len_limit and w[-1] in KILLER_ENDINGS]
             tier_2 = [w for w in valid_options if w[-1] in KILLER_ENDINGS]
             tier_3 = [w for w in valid_options if len(w) <= preferred_len_limit]
             
-            # Execution Routing
-            if tier_1:
-                word = random.choice(tier_1)
-                status_log = f"🔥 ATTACK TIER 1: Found short trap '{word}' (Length: {len(word)} >= {min_len})."
-            elif tier_2:
-                word = tier_2[0]
-                status_log = f"💥 ATTACK TIER 2: Using trap ending '{word[-1]}' with '{word}' (Length: {len(word)} >= {min_len})."
-            elif tier_3:
-                word = random.choice(tier_3)
-                status_log = f"🛡️ ROLLBACK TIER 3: Playing safe short word '{word}' (Length: {len(word)} >= {min_len})."
-            else:
-                word = valid_options[0]
-                status_log = f"⚠️ FALLBACK TIER 4: Forced survival play '{word}' (Length: {len(word)} >= {min_len})."
+            if tier_1: word = random.choice(tier_1)
+            elif tier_2: word = tier_2[0]
+            elif tier_3: word = random.choice(tier_3)
+            else: word = valid_options[0]
 
-            delay = 1.0 if is_retry else random.uniform(3.0, 4.5)
+            delay = 1.0 if is_retry else random.uniform(2.5, 3.5)
             elapsed = time.time() - state["turn_start_time"]
             
-            state["diagnostic_reason"] = f"TIMEOUT: Selected '{word}', but the engine ran out of time during typing ({elapsed:.1f}s elapsed)."
+            state["diagnostic_reason"] = f"TIMEOUT: Selected '{word}', ran out of time ({elapsed:.1f}s elapsed)."
             
             try:
                 async with client.action(chat_id, 'typing'):
                     await asyncio.sleep(delay)
-            except FloodWaitError as fwe:
-                state["diagnostic_reason"] = f"TELEGRAM RATE LIMIT: Blocked by Telegram FloodWait for {fwe.seconds}s during typing."
+            except FloodWaitError:
                 return
 
             state["last_submitted_word"] = word 
@@ -194,29 +348,24 @@ async def submit_word(chat_id, constraints, state, is_retry=False):
             
             try:
                 await client.send_message(chat_id, word)
-                print(status_log, flush=True)
-            except FloodWaitError as fwe:
-                state["diagnostic_reason"] = f"TELEGRAM RATE LIMIT: Blocked by FloodWait for {fwe.seconds}s while sending '{word}'."
+                print(f"🏹 PLAYED: {word} (Len: {len(word)}, Ends: {word[-1].upper()})", flush=True)
+            except FloodWaitError:
                 return
                 
-            # Log to Ledger upon transmission
             letter_key = word[0].upper()
-            if letter_key not in state["word_ledger"]:
-                state["word_ledger"][letter_key] = []
+            if letter_key not in state["word_ledger"]: state["word_ledger"][letter_key] = []
             state["word_ledger"][letter_key].append(f"{word} (≥{min_len})")
             
-            state["diagnostic_reason"] = f"GAME BOT DELAY: Sent '{word}' successfully. Waiting for validation."
+            state["diagnostic_reason"] = f"GAME BOT DELAY: Sent '{word}'. Waiting for validation."
         else:
-            state["diagnostic_reason"] = f"DICT EXHAUSTION: No valid words remain. Constraints: Start='{s_char}', Min={min_len}, Inc={i_chars}, Exc={e_chars}."
+            state["diagnostic_reason"] = f"DICT EXHAUSTION: Local and AI rescue failed. Start='{s_char}', Min={min_len}, Inc={i_chars}, Exc={e_chars}."
             
     except Exception as e:
         state["diagnostic_reason"] = f"INTERNAL ENGINE CRASH: {e}"
 
-# ==========================================
-# 📡 GAME EVENT LISTENERS
-# ==========================================
-@client.on(events.NewMessage(from_users=GAME_BOT))
-async def master_game_handler(event):
+
+@client.on(events.NewMessage(from_users=CHAIN_GAME_BOT))
+async def chain_game_handler(event):
     chat_id = event.chat_id
     state = get_game_state(chat_id)
     bot_text = event.raw_text.lower().replace('\n', ' ').replace('\r', ' ')
@@ -234,13 +383,8 @@ async def master_game_handler(event):
             state["my_turn"] = True
             asyncio.create_task(submit_word(chat_id, bot_text, state, is_retry=False))
         else:
-            if state["my_turn"]:
-                state["diagnostic_reason"] = "TURN LOST: Passed to another player before execution."
-            else:
-                state["diagnostic_reason"] = "IDLE: Waiting for opponent turn."
             state["my_turn"] = False
 
-    # Expanded rejection catch-net
     error_phrases = [
         "has been used", "not a valid word", "invalid", 
         "not in my list of words", "has less than",      
@@ -249,9 +393,7 @@ async def master_game_handler(event):
     
     if any(phrase in bot_text for phrase in error_phrases):
         last_word = state.get("last_submitted_word", "").lower()
-        
         if state["my_turn"] and last_word and last_word in bot_text:
-            # Check if bot specifically yelled at us for length during a rejection loop
             new_len_match = re.search(r'less than (\d+)', bot_text)
             if new_len_match:
                 new_len = new_len_match.group(1)
@@ -260,20 +402,16 @@ async def master_game_handler(event):
             state["used_words"].add(last_word)
             state["diagnostic_reason"] = f"REJECTION LOOP: Bot rejected '{last_word}'. Attempting recovery."
             state["last_submitted_word"] = "" 
-            
             asyncio.create_task(submit_word(chat_id, state["current_constraints"], state, is_retry=True))
 
     if "eliminated" in bot_text or "game over" in bot_text or "winner" in bot_text:
         if MY_USERNAME.lower() in bot_text or "game over" in bot_text:
-            if state["diagnostic_reason"] in ["IDLE: Waiting for opponent turn.", "Waiting for a game to start..."]:
-                state["diagnostic_reason"] = "SILENT TIMEOUT: Eliminated while idle. Missed turn event due to lag."
             update_dashboard(chat_id, state)
-            
         state["used_words"].clear()
         state["last_submitted_word"] = ""
         state["word_ledger"].clear()
         state["my_turn"] = False
 
-print(f"V27 Bulletproof Logic ({MY_USERNAME}) is running!", flush=True)
+print(f"V29 Multi-Agent Engine ({MY_USERNAME}) is running!", flush=True)
 client.start()
 client.run_until_disconnected()

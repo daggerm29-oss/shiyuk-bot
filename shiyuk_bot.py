@@ -5,6 +5,7 @@ import random
 import urllib.request
 import json
 import time
+import unicodedata  # <--- NEW: Added to cure Unicode Font Blindness
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 from telethon.errors import FloodWaitError
@@ -84,7 +85,7 @@ SESSION_STRING = "1BVtsOJkBu05CnVluaWqOIb1oXuO9Xn8RqbUpM_UNazurrlpYOwsfNs7t8dbvb
 client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
 # ==========================================
-# 🟩 AGENT 1: WORDSEEK (IRONCLAD ENGINE)
+# 🟩 AGENT 1: WORDSEEK (SMART ENGINE V31)
 # ==========================================
 wordseek_state = {}
 
@@ -143,7 +144,9 @@ def filter_wordseek_pool(pool, guess, feedback):
 @client.on(events.NewMessage(from_users=SEEK_GAME_BOT))
 async def wordseek_handler(event):
     chat_id = event.chat_id
-    text = event.raw_text
+    
+    # 🔥 CURE UNICODE BLINDNESS: Convert fancy fonts to standard letters safely
+    text = unicodedata.normalize('NFKC', event.raw_text)
     state = get_wordseek_state(chat_id)
     
     # 1. Detect Game Initialization
@@ -161,16 +164,14 @@ async def wordseek_handler(event):
         await client.send_message(chat_id, first_guess)
         return
 
-    # 2. Process Emoji Grid Updates (Ironclad Parser)
-    # Checks for the word "mode" safely, regardless of dot type
+    # 2. Process Emoji Grid Updates
     if "mode" in text.lower() and any(e in text for e in ['🟥', '🟨', '🟩']):
         if not state["active"]:
             # Auto-recover state if bot rebooted mid-game
             lines = text.split('\n')
             for line in lines:
                 if '🟥' in line or '🟨' in line or '🟩' in line:
-                    # Look for the all-caps word to determine length
-                    words = re.findall(r'[A-Z]+', line)
+                    words = re.findall(r'[a-zA-Z]+', line)
                     if words:
                         length = len(words[-1])
                         state["active"] = True
@@ -186,7 +187,6 @@ async def wordseek_handler(event):
             state["active"] = False
             return
 
-        # Parse the grid bulletproof-style (character by character)
         lines = [line.strip() for line in text.split('\n') if any(e in line for e in ['🟥', '🟨', '🟩'])]
         
         for line in lines:
@@ -196,12 +196,10 @@ async def wordseek_handler(event):
                 elif char == '🟨': feedback.append('Y')
                 elif char == '🟥': feedback.append('R')
                 
-            # Extract the guessed word (Telegram bot sends it in ALL CAPS next to the emojis)
-            words = re.findall(r'[A-Z]+', line)
+            words = re.findall(r'[a-zA-Z]+', line)
             if not words: continue
             guess_word = words[-1].lower()
             
-            # Strict safety net
             if len(feedback) != state["length"] or len(guess_word) != state["length"]: continue
             if guess_word in state["guessed"]: continue 
             
@@ -228,7 +226,7 @@ async def wordseek_handler(event):
 
 
 # ==========================================
-# ⛓️ AGENT 2: WORDCHAIN ENGINE (Offline Logic)
+# ⛓️ AGENT 2: WORDCHAIN ENGINE
 # ==========================================
 active_games = {}
 
@@ -374,6 +372,6 @@ async def chain_game_handler(event):
         state["word_ledger"].clear()
         state["my_turn"] = False
 
-print(f"V30 Multi-Agent Engine ({MY_USERNAME}) is running!", flush=True)
+print(f"V31 Multi-Agent Engine ({MY_USERNAME}) is running!", flush=True)
 client.start()
 client.run_until_disconnected()

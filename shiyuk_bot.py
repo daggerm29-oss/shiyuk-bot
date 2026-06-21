@@ -5,7 +5,7 @@ import random
 import urllib.request
 import json
 import time
-import unicodedata  # <--- NEW: Added to cure Unicode Font Blindness
+import unicodedata 
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 from telethon.errors import FloodWaitError
@@ -85,7 +85,7 @@ SESSION_STRING = "1BVtsOJkBu05CnVluaWqOIb1oXuO9Xn8RqbUpM_UNazurrlpYOwsfNs7t8dbvb
 client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
 # ==========================================
-# 🟩 AGENT 1: WORDSEEK (SMART ENGINE V31)
+# 🟩 AGENT 1: WORDSEEK (ASYNC TYPING FIX)
 # ==========================================
 wordseek_state = {}
 
@@ -105,7 +105,6 @@ def filter_wordseek_pool(pool, guess, feedback):
         valid = True
         word_chars = list(word)
         
-        # Pass 1: Greens (Exact Match)
         for i, (g_char, f) in enumerate(zip(guess, feedback)):
             if f == 'G':
                 if word[i] != g_char:
@@ -115,7 +114,6 @@ def filter_wordseek_pool(pool, guess, feedback):
         
         if not valid: continue
         
-        # Pass 2: Yellows (Wrong Position)
         for i, (g_char, f) in enumerate(zip(guess, feedback)):
             if f == 'Y':
                 if word[i] == g_char: 
@@ -129,7 +127,6 @@ def filter_wordseek_pool(pool, guess, feedback):
                     
         if not valid: continue
         
-        # Pass 3: Reds (Not in word)
         for i, (g_char, f) in enumerate(zip(guess, feedback)):
             if f == 'R':
                 if g_char in word_chars: 
@@ -141,15 +138,21 @@ def filter_wordseek_pool(pool, guess, feedback):
             
     return new_pool
 
+# 🔥 NEW: Background task function to prevent freezing the event loop!
+async def execute_wordseek_guess(chat_id, guess, delay):
+    try:
+        async with client.action(chat_id, 'typing'):
+            await asyncio.sleep(delay)
+        await client.send_message(chat_id, guess)
+    except Exception as e:
+        pass
+
 @client.on(events.NewMessage(from_users=SEEK_GAME_BOT))
 async def wordseek_handler(event):
     chat_id = event.chat_id
-    
-    # 🔥 CURE UNICODE BLINDNESS: Convert fancy fonts to standard letters safely
     text = unicodedata.normalize('NFKC', event.raw_text)
     state = get_wordseek_state(chat_id)
     
-    # 1. Detect Game Initialization
     start_match = re.search(r'Guess the (\d+)-letter word', text, re.IGNORECASE)
     if start_match:
         length = int(start_match.group(1))
@@ -159,15 +162,15 @@ async def wordseek_handler(event):
         state["guessed"] = set()
         print(f"🧩 WordSeek Started! Target Length: {length}. Possible Words: {len(state['pool'])}")
         
-        await asyncio.sleep(random.uniform(2.5, 4.0))
         first_guess = random.choice(state["pool"])
-        await client.send_message(chat_id, first_guess)
+        human_delay = random.choice([4.0, 5.0, 6.0])
+        
+        # Fire background task instead of sleeping in the main thread
+        asyncio.create_task(execute_wordseek_guess(chat_id, first_guess, human_delay))
         return
 
-    # 2. Process Emoji Grid Updates
     if "mode" in text.lower() and any(e in text for e in ['🟥', '🟨', '🟩']):
         if not state["active"]:
-            # Auto-recover state if bot rebooted mid-game
             lines = text.split('\n')
             for line in lines:
                 if '🟥' in line or '🟨' in line or '🟩' in line:
@@ -206,21 +209,19 @@ async def wordseek_handler(event):
             state["guessed"].add(guess_word)
             state["pool"] = filter_wordseek_pool(state["pool"], guess_word, feedback)
 
-        # Execute Next Mathematical Guess
         if state["pool"]:
             next_guess = random.choice(state["pool"])
             print(f"🎯 WordSeek Thinking... Pool reduced to {len(state['pool'])}. Guessing: {next_guess}")
             
-            await asyncio.sleep(random.uniform(3.5, 5.0)) 
-            try:
-                await client.send_message(chat_id, next_guess)
-            except FloodWaitError:
-                pass
+            human_delay = random.choice([4.0, 5.0, 6.0])
+            state["guessed"].add(next_guess) # Reserve the word instantly so we don't duplicate
+            
+            # Fire background task
+            asyncio.create_task(execute_wordseek_guess(chat_id, next_guess, human_delay))
         else:
             print("❌ WordSeek Dictionary Exhausted!")
             state["active"] = False
             
-    # Detect Standard Game Over
     if "Game over" in text or "won the game" in text.lower():
         state["active"] = False
 
@@ -293,7 +294,7 @@ async def submit_word(chat_id, constraints, state, is_retry=False):
             elif tier_3: word = random.choice(tier_3)
             else: word = valid_options[0]
 
-            delay = 1.0 if is_retry else random.uniform(2.5, 3.5)
+            delay = 1.0 if is_retry else random.choice([4.0, 5.0, 6.0])
             elapsed = time.time() - state["turn_start_time"]
             
             state["diagnostic_reason"] = f"TIMEOUT: Selected '{word}', ran out of time ({elapsed:.1f}s elapsed)."
@@ -372,6 +373,6 @@ async def chain_game_handler(event):
         state["word_ledger"].clear()
         state["my_turn"] = False
 
-print(f"V31 Multi-Agent Engine ({MY_USERNAME}) is running!", flush=True)
+print(f"V34 Multi-Agent Engine ({MY_USERNAME}) is running!", flush=True)
 client.start()
 client.run_until_disconnected()

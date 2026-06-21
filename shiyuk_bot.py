@@ -84,7 +84,7 @@ SESSION_STRING = "1BVtsOJkBu05CnVluaWqOIb1oXuO9Xn8RqbUpM_UNazurrlpYOwsfNs7t8dbvb
 client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
 # ==========================================
-# 🟩 AGENT 1: WORDSEEK (WORDLE) ENGINE
+# 🟩 AGENT 1: WORDSEEK (IRONCLAD ENGINE)
 # ==========================================
 wordseek_state = {}
 
@@ -156,22 +156,23 @@ async def wordseek_handler(event):
         state["guessed"] = set()
         print(f"🧩 WordSeek Started! Target Length: {length}. Possible Words: {len(state['pool'])}")
         
-        # First guess delay to mimic human reading
         await asyncio.sleep(random.uniform(2.5, 4.0))
         first_guess = random.choice(state["pool"])
         await client.send_message(chat_id, first_guess)
         return
 
-    # 2. Process Emoji Grid Updates
-    if "mode •" in text and any(e in text for e in ['🟥', '🟨', '🟩']):
+    # 2. Process Emoji Grid Updates (Ironclad Parser)
+    # Checks for the word "mode" safely, regardless of dot type
+    if "mode" in text.lower() and any(e in text for e in ['🟥', '🟨', '🟩']):
         if not state["active"]:
             # Auto-recover state if bot rebooted mid-game
             lines = text.split('\n')
             for line in lines:
                 if '🟥' in line or '🟨' in line or '🟩' in line:
-                    parts = line.strip().split()
-                    if len(parts) >= 2:
-                        length = len(parts[0])
+                    # Look for the all-caps word to determine length
+                    words = re.findall(r'[A-Z]+', line)
+                    if words:
+                        length = len(words[-1])
                         state["active"] = True
                         state["length"] = length
                         state["pool"] = [w for w in VALID_WORDS if len(w) == length]
@@ -180,33 +181,32 @@ async def wordseek_handler(event):
         
         if not state["active"]: return
 
-        # Check for victory condition
         if '🟩'*state["length"] in text:
             print("🏆 WordSeek Solved!")
             state["active"] = False
             return
 
-        # Parse the grid and eliminate impossible words
+        # Parse the grid bulletproof-style (character by character)
         lines = [line.strip() for line in text.split('\n') if any(e in line for e in ['🟥', '🟨', '🟩'])]
         
         for line in lines:
-            parts = line.split()
-            if len(parts) < 2: continue
-            emojis, guess_word = parts[0], parts[1].lower()
+            feedback = []
+            for char in line:
+                if char == '🟩': feedback.append('G')
+                elif char == '🟨': feedback.append('Y')
+                elif char == '🟥': feedback.append('R')
+                
+            # Extract the guessed word (Telegram bot sends it in ALL CAPS next to the emojis)
+            words = re.findall(r'[A-Z]+', line)
+            if not words: continue
+            guess_word = words[-1].lower()
             
-            if len(emojis) != state["length"] or len(guess_word) != state["length"]: continue
+            # Strict safety net
+            if len(feedback) != state["length"] or len(guess_word) != state["length"]: continue
             if guess_word in state["guessed"]: continue 
             
             state["guessed"].add(guess_word)
-            
-            feedback = []
-            for e in emojis:
-                if e == '🟩': feedback.append('G')
-                elif e == '🟨': feedback.append('Y')
-                elif e == '🟥': feedback.append('R')
-                
-            if len(feedback) == state["length"]:
-                state["pool"] = filter_wordseek_pool(state["pool"], guess_word, feedback)
+            state["pool"] = filter_wordseek_pool(state["pool"], guess_word, feedback)
 
         # Execute Next Mathematical Guess
         if state["pool"]:
@@ -374,6 +374,6 @@ async def chain_game_handler(event):
         state["word_ledger"].clear()
         state["my_turn"] = False
 
-print(f"V29 Multi-Agent Engine ({MY_USERNAME}) is running!", flush=True)
+print(f"V30 Multi-Agent Engine ({MY_USERNAME}) is running!", flush=True)
 client.start()
 client.run_until_disconnected()

@@ -1,3 +1,23 @@
+Here is the **V29 Multi-Agent Script (No AI)**.
+
+I have completely stripped out the Gemini Generative AI, the API key requirement, and the self-healing protocol. The script is now lightweight and strictly relies on mathematical deduction, your local dictionary, and your `verified_database.json` file.
+
+### Step 1: Clean your `requirements.txt`
+
+Since we removed the AI, you no longer need the Google SDK. Open your `requirements.txt` file and **delete** this line if you added it previously:
+
+```text
+google-generativeai
+
+```
+
+### Step 2: The Clean V29 Script
+
+Copy and paste this updated version. Just remember to put your Telegram Session String back in!
+
+### `shiyuk_bot.py` (V29 - Offline Multi-Agent Engine)
+
+```python
 import asyncio
 import os
 import re
@@ -10,7 +30,6 @@ from telethon.sessions import StringSession
 from telethon.errors import FloodWaitError
 from flask import Flask
 from threading import Thread
-import google.generativeai as genai
 
 # ==========================================
 # 📚 DICTIONARY & JSON INJECTION
@@ -81,11 +100,6 @@ SEEK_GAME_BOT = "WordSeekBot"
 
 # 🔑 HARDCODED TELEGRAM SESSION
 SESSION_STRING = "1BVtsOJkBu05CnVluaWqOIb1oXuO9Xn8RqbUpM_UNazurrlpYOwsfNs7t8dbvb2y2z5QIuKiSxu6e7vJ5wqCrQiRhX7xKxQzB78v-BJdPYt4d4OlHP9blBE_GrRlVY3JrQ9kcMLyRF2HMY7Vw5CjG0prqAMYBrNXCm2JtTfdOZGqW31RWV7R_baXFSZThr9NvcH9wOFbiRFV12zxsnK15SU13FOvI83t9ohIbB1LJwzKLF4qyR5Twi4gWRwzLTNG19IqI5rO-5yhcSRQ-4OrFZf0092CzaGOwH9QuoUpWewUrSwXgDCzg70BDNsy-deqwFbflm5gPzhhW7_enpx8D4x_OKZtCqNM="
-
-# 🧠 GEMINI API KEY
-GEMINI_API_KEY = "YOUR_GEMINI_API_KEY_HERE"
-genai.configure(api_key=GEMINI_API_KEY)
-ai_model = genai.GenerativeModel('gemini-1.5-flash') 
 
 client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
@@ -234,7 +248,7 @@ async def wordseek_handler(event):
 
 
 # ==========================================
-# ⛓️ AGENT 2: WORDCHAIN ENGINE (V28 Logic)
+# ⛓️ AGENT 2: WORDCHAIN ENGINE (Offline Logic)
 # ==========================================
 active_games = {}
 
@@ -286,37 +300,6 @@ async def submit_word(chat_id, constraints, state, is_retry=False):
             if e_chars and any(c in w for c in e_chars): continue
             if w in state["used_words"]: continue
             valid_options.append(w)
-            
-        # 🚨 GEMINI SELF-HEALING PROTOCOL
-        if not valid_options:
-            print("🚨 LOCAL DICT EXHAUSTED! Triggering Gemini API Self-Healing Protocol...", flush=True)
-            state["diagnostic_reason"] = "DICT EXHAUSTION. Awaiting Gemini AI rescue."
-            try:
-                prompt = f"Generate a JSON array of 5 valid, highly obscure English words (scientific, medical, chemical, or geographical). Criteria:\n"
-                prompt += f"1. Must start with the letter '{s_char.upper()}'.\n"
-                prompt += f"2. Must be exactly {min_len} letters or longer.\n"
-                if i_chars: prompt += f"3. Must contain the letters: {', '.join(i_chars).upper()}.\n"
-                if e_chars: prompt += f"4. MUST NOT contain the letters: {', '.join(e_chars).upper()}.\n"
-                if state["used_words"]: prompt += f"5. MUST NOT be any of these words: {list(state['used_words'])[:10]}.\n"
-                prompt += "Output ONLY a valid JSON array of lowercase strings. No markdown, no explanations."
-
-                response = await asyncio.to_thread(ai_model.generate_content, prompt)
-                clean_json = re.search(r'\[(.*?)\]', response.text.replace('\n', ''), re.IGNORECASE)
-                if clean_json:
-                    new_words = json.loads(f"[{clean_json.group(1)}]")
-                    for w in new_words:
-                        w_clean = w.strip().lower()
-                        if w_clean.isalpha():
-                            VALID_WORDS.add(w_clean)
-                            valid_options.append(w_clean)
-                            
-                    with open(JSON_DB_FILE, "a") as f:
-                        for w in valid_options:
-                            f.write(f'\n"{w}": true,')
-                            
-                    print(f"✅ AI RESCUE SUCCESS: Found {len(valid_options)} new words: {valid_options}", flush=True)
-            except Exception as ai_e:
-                print(f"❌ AI RESCUE FAILED: {ai_e}", flush=True)
                 
         if valid_options:
             KILLER_ENDINGS = ['x', 'j', 'q', 'z', 'k', 'v', 'y']
@@ -358,11 +341,10 @@ async def submit_word(chat_id, constraints, state, is_retry=False):
             
             state["diagnostic_reason"] = f"GAME BOT DELAY: Sent '{word}'. Waiting for validation."
         else:
-            state["diagnostic_reason"] = f"DICT EXHAUSTION: Local and AI rescue failed. Start='{s_char}', Min={min_len}, Inc={i_chars}, Exc={e_chars}."
+            state["diagnostic_reason"] = f"DICT EXHAUSTION: No valid words remain. Constraints: Start='{s_char}', Min={min_len}, Inc={i_chars}, Exc={e_chars}."
             
     except Exception as e:
         state["diagnostic_reason"] = f"INTERNAL ENGINE CRASH: {e}"
-
 
 @client.on(events.NewMessage(from_users=CHAIN_GAME_BOT))
 async def chain_game_handler(event):
@@ -415,3 +397,5 @@ async def chain_game_handler(event):
 print(f"V29 Multi-Agent Engine ({MY_USERNAME}) is running!", flush=True)
 client.start()
 client.run_until_disconnected()
+
+```

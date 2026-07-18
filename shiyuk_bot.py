@@ -272,7 +272,7 @@ async def wordseek_handler(event):
         first_guess = random.choice(state["pool"])
         state["pool"].remove(first_guess)
         
-        human_delay = random.choice([2.0, 3.0, 4.0])
+        human_delay = random.choice([1.0, 2.0, 3.0])
         asyncio.create_task(execute_wordseek_guess(chat_id, first_guess, human_delay, state["match_id"]))
         return
 
@@ -324,7 +324,7 @@ async def wordseek_handler(event):
                 next_guess = random.choice(state["pool"])
                 log_msg(f"🎯 WordSeek Thinking... Pool reduced to {len(state['pool'])}. Guessing: {next_guess}")
                 state["pool"].remove(next_guess) 
-                human_delay = random.choice([3.0, 4.0, 5.0, 6.0])
+                human_delay = random.choice([1.0, 2.0, 3.0])
                 asyncio.create_task(execute_wordseek_guess(chat_id, next_guess, human_delay, state["match_id"]))
             else:
                 log_msg(f"🕵️ Passive Tracker: Pool reduced to {len(state['pool'])}.")

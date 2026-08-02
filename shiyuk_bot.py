@@ -6,9 +6,6 @@ import urllib.request
 import json
 import time
 import unicodedata 
-import html
-from collections import deque
-from datetime import datetime
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 from telethon.errors import FloodWaitError
@@ -16,37 +13,17 @@ from flask import Flask
 from threading import Thread
 
 # ==========================================
-# 📝 CUSTOM LIVE WEB LOGGER
-# ==========================================
-bot_logs = deque(maxlen=100)
-bot_status = "🟢 Starting up..."
-
-def log_msg(msg, is_error=False):
-    global bot_status
-    timestamp = datetime.now().strftime("%H:%M:%S")
-    if is_error:
-        bot_status = "🔴 Error Detected (See logs below)"
-    elif "running" in msg.lower() or "unlocked" in msg.lower():
-        bot_status = "🟢 Online & Listening"
-        
-    color = "#ff4444" if is_error else "#00ff00"
-    safe_msg = html.escape(msg)
-    formatted_msg = f"<span style='color: #888;'>[{timestamp}]</span> <span style='color: {color};'>{safe_msg}</span>"
-    bot_logs.append(formatted_msg)
-    print(msg, flush=True)
-
-# ==========================================
 # 📚 DICTIONARY & JSON INJECTION
 # ==========================================
-log_msg("📚 Downloading English dictionary for SHIYUK...") 
+print("📚 Downloading English dictionary for SHIYUK...", flush=True) 
 try:
     url = "https://raw.githubusercontent.com/dwyl/english-words/master/words_alpha.txt"
     req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
     response = urllib.request.urlopen(req)
     VALID_WORDS = {w.decode('utf-8').strip().lower() for w in response.read().splitlines() if w.decode('utf-8').strip().isalpha()}
-    log_msg(f"✅ Loaded {len(VALID_WORDS)} base words into memory.")
+    print(f"✅ Loaded {len(VALID_WORDS)} base words into memory.", flush=True)
 except Exception as e:
-    log_msg(f"⚠️ Failed to download dictionary: {e}", is_error=True)
+    print(f"⚠️ Failed to download dictionary: {e}", flush=True)
     VALID_WORDS = set()
 
 JSON_DB_FILE = "verified_database.json"
@@ -59,52 +36,35 @@ if os.path.exists(JSON_DB_FILE):
                 words_to_add = [w for w, valid in custom_data.items() if valid]
             else:
                 words_to_add = custom_data
+                
             for word in words_to_add:
                 if word not in VALID_WORDS:
                     VALID_WORDS.add(word)
                     added_count += 1
-        log_msg(f"🧬 Injected {added_count} custom verified words from {JSON_DB_FILE}.")
+        print(f"🧬 Injected {added_count} custom verified words from {JSON_DB_FILE}.", flush=True)
     except Exception as e:
-        log_msg(f"⚠️ Failed to load custom JSON: {e}", is_error=True)
+        print(f"⚠️ Failed to load custom JSON: {e}", flush=True)
 
 # ==========================================
-# 🌐 LIVE DASHBOARD SERVER
+# 🌐 KEEP-ALIVE SERVER (FOR RENDER)
 # ==========================================
 app = Flask(__name__)
-latest_diagnostic_report = ""
+latest_diagnostic_report = "Bot is running on Render. No games have been lost yet! 🚀"
 
 @app.route('/')
+def home():
+    return "SHIYUK Multi-Agent Bot is running! Go to /logs to view diagnostics."
+
 @app.route('/logs')
-def display_dashboard():
-    logs_html = "<br>".join(bot_logs)
-    return f"""
-    <html>
-    <head>
-        <title>SHIYUK Bot Dashboard</title>
-        <meta http-equiv="refresh" content="10">
-    </head>
-    <body style='background-color:#121212; color:#d4d4d4; font-family:monospace; padding:20px;'>
-        <h2 style='color:#ffffff;'>🤖 SHIYUK Multi-Agent Bot Dashboard</h2>
-        <h3 style='color:#a0a0a0;'>Status: {bot_status}</h3>
-        <hr style='border-color:#333;'>
-        <div style='background-color:#000000; padding:15px; border-radius:5px; height:60vh; overflow-y:auto; border: 1px solid #333;'>
-            {logs_html if logs_html else "Waiting for operations to start..."}
-        </div>
-        <br>
-        <div style='background-color:#1e1e1e; padding:15px; border-radius:5px; border: 1px solid #333; color: #ffaa00;'>
-            <b>Last Game Diagnostic:</b><br>
-            <pre style='white-space: pre-wrap; font-family:monospace;'>{html.escape(latest_diagnostic_report) if latest_diagnostic_report else "No game eliminated yet."}</pre>
-        </div>
-    </body>
-    </html>
-    """
+def logs():
+    return f"<body style='background-color:#1e1e1e; color:#00ff00; font-family:monospace; padding:20px;'><pre style='font-size:16px;'>{latest_diagnostic_report}</pre></body>"
 
 def run_server():
     try:
         port = int(os.environ.get('PORT', 8080)) 
-        app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+        app.run(host='0.0.0.0', port=port)
     except Exception as e:
-        log_msg(f"ℹ️ Local Port Note: Web server failed to bind. Error: {e}", is_error=True)
+        print(f"ℹ️ Local Port Note: Web server paused locally.", flush=True)
 
 Thread(target=run_server, daemon=True).start()
 
@@ -115,15 +75,17 @@ API_ID = 27611951
 API_HASH = '16c265ac1d31f819b7dd53ce3b3602af'
 MY_USERNAME = "ayan"  
 
+# Target Game Bots
 CHAIN_GAME_BOT = "on9wordchainbot"   
 SEEK_GAME_BOT = "WordSeekBot"
 
+# 🔑 HARDCODED TELEGRAM SESSION
 SESSION_STRING = "1BVtsOG8BuzkW2vow7Wr6ncc-rF6MrdkRrPj3EN82KyLGwIHUDrTGe5LSydRy7hmyF6jyU-UtE5-BCKD9UQPXhavyAEBg1saoal9ejgiPEFFkKUzzygVAMiYlHyItkixtSPx2AXYmVmWYwQ9g05ynjTu7EfbMxSeFnfNgetMdgjDAjttkCCUMJg5FE88u-iHqkjyFJaYfo-16o6N-oQ83RCbCbU-FBUJNjZMDWevbwx_OwDUXkGNb1WSvCGq9MXFYF0vvH8xtGHwigOfv6sAISuNiKJnwCus7yIvW6yCiRv5rg7D7CPnHlBWbK1otYTpjs72jP90BaQ_k8J-fEySBS6Buo6EGogc="
 
 client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
 # ==========================================
-# 🟩 AGENT 1: WORDSEEK (V42 PASSIVE TRACKER)
+# 🟩 AGENT 1: WORDSEEK (V40 AUTO-WIPE GATE)
 # ==========================================
 wordseek_state = {}
 
@@ -135,20 +97,19 @@ def get_wordseek_state(chat_id):
             "pool": [],
             "processed_feedback": set(),
             "authorized": False,
-            "last_auth_time": 0,
-            "match_id": 0  # 🔥 Tracks exact match to prevent ghost guesses
+            "last_auth_time": 0  # 🔥 NEW: Tracks exact time of your commands
         }
     return wordseek_state[chat_id]
 
 def wipe_wordseek_memory(chat_id):
+    """Hard wipes the state to completely prevent memory leaks."""
     wordseek_state[chat_id] = {
         "active": False,
         "length": 5,
         "pool": [],
         "processed_feedback": set(),
         "authorized": False,
-        "last_auth_time": 0,
-        "match_id": 0
+        "last_auth_time": 0
     }
 
 @client.on(events.NewMessage(outgoing=True))
@@ -156,23 +117,18 @@ async def user_command_monitor(event):
     chat_id = event.chat_id
     text = event.raw_text.strip().lower()
     
+    # 🔥 UNLOCK GATE: Records the exact second you authorized play
     if text in ["wait", "play"] or text.startswith("/new"):
         state = get_wordseek_state(chat_id)
         state["authorized"] = True
         state["last_auth_time"] = time.time()
-        log_msg(f"🔓 WordSeek Gate Unlocked via trigger: '{text}'")
+        print(f"🔓 WordSeek Gate Unlocked for chat {chat_id} via trigger: '{text}'", flush=True)
 
-        # 🔥 INSTANT JOIN: If passive mode already shrunk the pool, guess immediately!
-        if state["active"] and state["pool"]:
-            next_guess = random.choice(state["pool"])
-            log_msg(f"⚡ Instant Join! Using passive memory (Pool: {len(state['pool'])}). Guessing: {next_guess}")
-            state["pool"].remove(next_guess)
-            # Use a tiny 1-second delay because we are hijacking an active game
-            asyncio.create_task(execute_wordseek_guess(chat_id, next_guess, 1.0, state["match_id"]))
-
+    # 🔥 MANUAL WIPE: Instantly erases memory if you end the game manually
     if text.startswith("/end") or text.startswith("/lock"):
         wipe_wordseek_memory(chat_id)
-        log_msg(f"🔒 WordSeek Gate manually wiped & locked.")
+        print(f"🔒 WordSeek Gate manually wiped & locked.", flush=True)
+
 
 def filter_wordseek_pool(pool, guess, feedback):
     new_pool = []
@@ -213,23 +169,13 @@ def filter_wordseek_pool(pool, guess, feedback):
             
     return new_pool
 
-async def execute_wordseek_guess(chat_id, guess, delay, match_id):
+async def execute_wordseek_guess(chat_id, guess, delay):
     try:
-        # 1. Wait the human delay before acting
-        await asyncio.sleep(delay)
-        
-        # 2. 🔥 GHOST CHECK: Did the game end or wipe while we were sleeping?
-        state = get_wordseek_state(chat_id)
-        if not state["active"] or state["match_id"] != match_id:
-            log_msg(f"🛑 Aborted ghost guess '{guess}'. Match ended while sleeping.")
-            return
-
-        # 3. If still valid, type and send
         async with client.action(chat_id, 'typing'):
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(delay)
         await client.send_message(chat_id, guess)
     except Exception as e:
-        log_msg(f"⚠️ Failed to send WordSeek guess: {e}", is_error=True)
+        pass
 
 @client.on(events.NewMessage(from_users=SEEK_GAME_BOT))
 async def wordseek_handler(event):
@@ -237,22 +183,10 @@ async def wordseek_handler(event):
     text = unicodedata.normalize('NFKC', event.raw_text)
     state = get_wordseek_state(chat_id)
     
-    # 🛑 1. WIN / END DETECTION (Checks this before doing any grid math)
-    # 🔥 Expanded to match your screenshot perfectly ("guessed it correctly")
-    end_triggers = [
-        "game over", "won the game", "the word was", 
-        "game ended", "ended the game", "time's up",
-        "time is up", "guessed the word", "guessed it correctly",
-        "congrats!", "correct word:"
-    ]
-    if any(trigger in text.lower() for trigger in end_triggers):
-        log_msg("🛑 WordSeek Match Concluded. Wiping memory and killing tasks.")
-        wipe_wordseek_memory(chat_id)
-        return
-
-    # 🧩 2. NEW MATCH DETECTION
     start_match = re.search(r'Guess the (\d+)-letter word', text, re.IGNORECASE)
     if start_match:
+        # 🔥 TTL SECURITY CHECK: If you didn't type an auth command in the last 30 seconds, 
+        # it is impossible that this is your game. Forcefully lock the gate to prevent leaks.
         time_since_auth = time.time() - state.get("last_auth_time", 0)
         if time_since_auth > 30:
             state["authorized"] = False
@@ -262,21 +196,19 @@ async def wordseek_handler(event):
         state["length"] = length
         state["pool"] = [w for w in VALID_WORDS if len(w) == length]
         state["processed_feedback"] = set()
-        state["match_id"] = time.time() # 🔥 Assign unique ID to this match
-        log_msg(f"🧩 WordSeek Match Detected! Target Length: {length}.")
+        print(f"🧩 WordSeek Match Detected! Target Length: {length}.", flush=True)
         
         if not state["authorized"]:
-            log_msg("🕵️ Passive Tracking Engaged. Tracking pool silently.")
+            print("zzz Standing down. Match started by someone else. Type 'wait' or 'play' to join.", flush=True)
             return
             
         first_guess = random.choice(state["pool"])
         state["pool"].remove(first_guess)
         
-        human_delay = random.choice([1.0, 2.0, 3.0])
-        asyncio.create_task(execute_wordseek_guess(chat_id, first_guess, human_delay, state["match_id"]))
+        human_delay = random.choice([4.0, 5.0, 6.0])
+        asyncio.create_task(execute_wordseek_guess(chat_id, first_guess, human_delay))
         return
 
-    # 📊 3. GRID & FEEDBACK PROCESSING (Passive Tracking is now allowed here)
     if "mode" in text.lower() and any(e in text for e in ['🟥', '🟨', '🟩']):
         if not state["active"]:
             lines = text.split('\n')
@@ -289,13 +221,13 @@ async def wordseek_handler(event):
                         state["length"] = length
                         state["pool"] = [w for w in VALID_WORDS if len(w) == length]
                         state["processed_feedback"] = set()
-                        state["match_id"] = time.time() # Bind ID if caught mid-game
                         break
         
         if not state["active"]: return
+        if not state["authorized"]: return
 
         if '🟩'*state["length"] in text:
-            log_msg("🏆 WordSeek Grid Solved! Wiping memory.")
+            print("🏆 WordSeek Solved! Wiping memory.")
             wipe_wordseek_memory(chat_id) 
             return
 
@@ -318,23 +250,31 @@ async def wordseek_handler(event):
             state["processed_feedback"].add(guess_word)
             state["pool"] = filter_wordseek_pool(state["pool"], guess_word, feedback)
 
-        # 🚀 4. ACTION PHASE
         if state["pool"]:
-            if state["authorized"]:
-                next_guess = random.choice(state["pool"])
-                log_msg(f"🎯 WordSeek Thinking... Pool reduced to {len(state['pool'])}. Guessing: {next_guess}")
-                state["pool"].remove(next_guess) 
-                human_delay = random.choice([1.0, 2.0, 3.0])
-                asyncio.create_task(execute_wordseek_guess(chat_id, next_guess, human_delay, state["match_id"]))
-            else:
-                log_msg(f"🕵️ Passive Tracker: Pool reduced to {len(state['pool'])}.")
+            next_guess = random.choice(state["pool"])
+            print(f"🎯 WordSeek Thinking... Pool reduced to {len(state['pool'])}. Guessing: {next_guess}")
+            
+            state["pool"].remove(next_guess) 
+            
+            human_delay = random.choice([6.0, 8.0, 10.0, 12.0])
+            asyncio.create_task(execute_wordseek_guess(chat_id, next_guess, human_delay))
         else:
-            if state["authorized"]:
-                log_msg("❌ WordSeek Dictionary Exhausted!", is_error=True)
+            print("❌ WordSeek Dictionary Exhausted!")
             wipe_wordseek_memory(chat_id)
+            
+    # 🔥 EXTENDED AUTO-WIPE: Traps every possible game-ending state
+    end_triggers = [
+        "game over", "won the game", "the word was", 
+        "game ended", "ended the game", "time's up",
+        "time is up", "guessed the word"
+    ]
+    if any(trigger in text.lower() for trigger in end_triggers):
+        print("🛑 WordSeek Match Concluded. Wiping memory.", flush=True)
+        wipe_wordseek_memory(chat_id)
+
 
 # ==========================================
-# ⛓️ AGENT 2: WORDCHAIN ENGINE (ATTACK MODE)
+# ⛓️ AGENT 2: WORDCHAIN ENGINE (V38 ANTI-SWEAT)
 # ==========================================
 active_games = {}
 
@@ -346,6 +286,8 @@ def get_game_state(chat_id):
             "last_submitted_word": "",
             "my_turn": False,
             "turn_start_time": 0,
+            "last_word_sent_time": 0,
+            "sweat_detected": False,
             "diagnostic_reason": "Waiting for a game to start...", 
             "word_ledger": {} 
         }
@@ -353,13 +295,14 @@ def get_game_state(chat_id):
 
 def update_dashboard(chat_id, state):
     global latest_diagnostic_report
-    report = f"❌ CAUSE OF DEATH: {state['diagnostic_reason']}\n\n📊 WORD LEDGER:\n"
-    if not state["word_ledger"]: report += "> No words played.\n"
+    report = f"==================================================\n💀 ELIMINATION DIAGNOSTIC REPORT\n==================================================\n\n❌ CAUSE OF DEATH:\n> {state['diagnostic_reason']}\n\n📊 WORD LEDGER (History for this match):\n"
+    if not state["word_ledger"]: report += "> No words were successfully played.\n"
     else:
         for letter in sorted(state["word_ledger"].keys()):
             report += f"- [{letter.upper()}]: {', '.join(state['word_ledger'][letter])}\n"
+    report += f"\n==================================================\n"
     latest_diagnostic_report = report
-    log_msg(f"💀 Elimination Logged: {state['diagnostic_reason']}", is_error=True)
+    print(report, flush=True)
 
 async def submit_word(chat_id, constraints, state, is_retry=False):
     if not is_retry: state["turn_start_time"] = time.time()
@@ -387,21 +330,25 @@ async def submit_word(chat_id, constraints, state, is_retry=False):
             valid_options.append(w)
                 
         if valid_options:
-            # 🔥 NEW LOGIC: Filter valid words to find those that end with 'y'
-            y_ending_words = [w for w in valid_options if w.endswith('y')]
+            valid_options.sort(key=len)
+            preferred_len_limit = min_len + 2
             
-            # Fallback constraint: use 'y' words if available, else revert to all valid options
-            pool_to_use = y_ending_words if y_ending_words else valid_options
-            
-            preferred_len_limit = min_len + 3 
-            casual_options = [w for w in pool_to_use if len(w) <= preferred_len_limit]
-            
-            if casual_options:
-                word = random.choice(casual_options)
+            # 🔥 ANTI-SWEAT ATTACK LOGIC
+            if state.get("sweat_detected"):
+                KILLER_ENDINGS = ['x', 'e', 'k', 'v', 'z', 'j', 'q']
             else:
-                word = random.choice(pool_to_use)
+                KILLER_ENDINGS = ['y']
+            
+            tier_1 = [w for w in valid_options if len(w) <= preferred_len_limit and w[-1] in KILLER_ENDINGS]
+            tier_2 = [w for w in valid_options if w[-1] in KILLER_ENDINGS]
+            tier_3 = [w for w in valid_options if len(w) <= preferred_len_limit]
+            
+            if tier_1: word = random.choice(tier_1)
+            elif tier_2: word = tier_2[0]
+            elif tier_3: word = random.choice(tier_3)
+            else: word = valid_options[0]
 
-            delay = 1.0 if is_retry else random.choice([4.0, 5.0, 6.0])
+            delay = 1.0 if is_retry else random.choice([2.0, 4.0, 5.0])
             elapsed = time.time() - state["turn_start_time"]
             
             state["diagnostic_reason"] = f"TIMEOUT: Selected '{word}', ran out of time ({elapsed:.1f}s elapsed)."
@@ -409,8 +356,7 @@ async def submit_word(chat_id, constraints, state, is_retry=False):
             try:
                 async with client.action(chat_id, 'typing'):
                     await asyncio.sleep(delay)
-            except FloodWaitError as e:
-                log_msg(f"⚠️ Telegram Rate Limit Hit: {e}", is_error=True)
+            except FloodWaitError:
                 return
 
             state["last_submitted_word"] = word 
@@ -418,9 +364,11 @@ async def submit_word(chat_id, constraints, state, is_retry=False):
             
             try:
                 await client.send_message(chat_id, word)
-                log_msg(f"🏹 PLAYED (Attack Mode): {word} (Len: {len(word)}, Ends: {word[-1].upper()})")
-            except Exception as e:
-                log_msg(f"⚠️ Failed to send WordChain guess: {e}", is_error=True)
+                state["last_word_sent_time"] = time.time()
+                
+                tactic = "🛡️ PIVOT" if state.get("sweat_detected") else "⚔️ Y-ATK"
+                print(f"🏹 PLAYED [{tactic}]: {word} (Len: {len(word)}, Ends: {word[-1].upper()})", flush=True)
+            except FloodWaitError:
                 return
                 
             letter_key = word[0].upper()
@@ -430,11 +378,9 @@ async def submit_word(chat_id, constraints, state, is_retry=False):
             state["diagnostic_reason"] = f"GAME BOT DELAY: Sent '{word}'. Waiting for validation."
         else:
             state["diagnostic_reason"] = f"DICT EXHAUSTION: No valid words remain. Constraints: Start='{s_char}', Min={min_len}, Inc={i_chars}, Exc={e_chars}."
-            log_msg(state["diagnostic_reason"], is_error=True)
             
     except Exception as e:
         state["diagnostic_reason"] = f"INTERNAL ENGINE CRASH: {e}"
-        log_msg(state["diagnostic_reason"], is_error=True)
 
 @client.on(events.NewMessage(from_users=CHAIN_GAME_BOT))
 async def chain_game_handler(event):
@@ -453,7 +399,18 @@ async def chain_game_handler(event):
         
         if target_phrase in bot_text:
             state["my_turn"] = True
-            log_msg(f"🔔 Turn Detected: Analyzing constraints...")
+            
+            # 🔥 ANTI-SWEAT DETECTION
+            last_sent = state.get("last_word_sent_time", 0)
+            if last_sent > 0:
+                round_trip = time.time() - last_sent
+                if round_trip < 6.0:
+                    state["sweat_detected"] = True
+                    print(f"\n🕵️‍♂️ PRE-TYPING DETECTED! (Opponent replied in {round_trip:.1f}s). Changing attack vector...\n", flush=True)
+                else:
+                    state["sweat_detected"] = False
+                    print(f"⏱️ Turn cycle normal ({round_trip:.1f}s). Resuming Y-attack.", flush=True)
+            
             asyncio.create_task(submit_word(chat_id, bot_text, state, is_retry=False))
         else:
             state["my_turn"] = False
@@ -474,8 +431,8 @@ async def chain_game_handler(event):
 
             state["used_words"].add(last_word)
             state["diagnostic_reason"] = f"REJECTION LOOP: Bot rejected '{last_word}'. Attempting recovery."
-            log_msg(f"⛔ Word Rejected: {last_word}. Attempting recovery...", is_error=True)
             state["last_submitted_word"] = "" 
+            state["last_word_sent_time"] = 0 
             asyncio.create_task(submit_word(chat_id, state["current_constraints"], state, is_retry=True))
 
     if "eliminated" in bot_text or "game over" in bot_text or "winner" in bot_text:
@@ -483,10 +440,11 @@ async def chain_game_handler(event):
             update_dashboard(chat_id, state)
         state["used_words"].clear()
         state["last_submitted_word"] = ""
+        state["last_word_sent_time"] = 0
+        state["sweat_detected"] = False
         state["word_ledger"].clear()
         state["my_turn"] = False
-        log_msg("🏁 WordChain Game Concluded. Memory wiped.")
 
-log_msg(f"🚀 V42 Passive Tracker & Attack Engine ({MY_USERNAME}) is running!")
+print(f"V40 Cloud Memory-Wipe Engine ({MY_USERNAME}) is running!", flush=True)
 client.start()
 client.run_until_disconnected()

@@ -334,7 +334,7 @@ async def wordseek_handler(event):
             wipe_wordseek_memory(chat_id)
 
 # ==========================================
-# ⛓️ AGENT 2: WORDCHAIN ENGINE (FRIENDLY MODE)
+# ⛓️ AGENT 2: WORDCHAIN ENGINE (ATTACK MODE)
 # ==========================================
 active_games = {}
 
@@ -387,13 +387,19 @@ async def submit_word(chat_id, constraints, state, is_retry=False):
             valid_options.append(w)
                 
         if valid_options:
+            # 🔥 NEW LOGIC: Filter valid words to find those that end with 'y'
+            y_ending_words = [w for w in valid_options if w.endswith('y')]
+            
+            # Fallback constraint: use 'y' words if available, else revert to all valid options
+            pool_to_use = y_ending_words if y_ending_words else valid_options
+            
             preferred_len_limit = min_len + 3 
-            casual_options = [w for w in valid_options if len(w) <= preferred_len_limit]
+            casual_options = [w for w in pool_to_use if len(w) <= preferred_len_limit]
             
             if casual_options:
                 word = random.choice(casual_options)
             else:
-                word = random.choice(valid_options)
+                word = random.choice(pool_to_use)
 
             delay = 1.0 if is_retry else random.choice([4.0, 5.0, 6.0])
             elapsed = time.time() - state["turn_start_time"]
@@ -412,7 +418,7 @@ async def submit_word(chat_id, constraints, state, is_retry=False):
             
             try:
                 await client.send_message(chat_id, word)
-                log_msg(f"🏹 PLAYED (Friendly): {word} (Len: {len(word)}, Ends: {word[-1].upper()})")
+                log_msg(f"🏹 PLAYED (Attack Mode): {word} (Len: {len(word)}, Ends: {word[-1].upper()})")
             except Exception as e:
                 log_msg(f"⚠️ Failed to send WordChain guess: {e}", is_error=True)
                 return
@@ -481,6 +487,6 @@ async def chain_game_handler(event):
         state["my_turn"] = False
         log_msg("🏁 WordChain Game Concluded. Memory wiped.")
 
-log_msg(f"🚀 V42 Passive Tracker Engine ({MY_USERNAME}) is running!")
+log_msg(f"🚀 V42 Passive Tracker & Attack Engine ({MY_USERNAME}) is running!")
 client.start()
 client.run_until_disconnected()
